@@ -1,0 +1,6 @@
+SYNTHETIC EXAMPLE — not a live vacancy.
+
+Example Robotics — Software Intern
+
+Build Python tools for sensor data analysis. Add unit tests for data processing.
+We value clear communication and reliable software. Familiarity with C++ is a plus.

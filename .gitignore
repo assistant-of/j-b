@@ -1,0 +1,32 @@
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+/.venv/
+
+# Package builds and tool caches
+*.egg-info/
+/build/
+/dist/
+/.uv-cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+/htmlcov/
+
+# Private applicant materials and generated applications
+/projects/
+/master/*
+/ref/*
+!/master/.gitkeep
+!/ref/.gitkeep
+
+# Local credentials and operating-system files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
+# Keep pyproject.toml, uv.lock, and .python-version tracked for reproducible setup.
