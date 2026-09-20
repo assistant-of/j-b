@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from scrubber import schema
 from scrubber.render import escape, resume_tex
+from scrubber.text import plain_quote
 from scrubber.verify import check_candidate, check_plan, contains, lean_certificate
 from .fixtures import compiled, fixture
 
@@ -69,9 +70,58 @@ class VerificationTests(unittest.TestCase):
         report = self.check()
         self.assertEqual(report["tree"]["sections"][0]["status"], "fail")
 
-    def test_faithful_bullet_cannot_be_rewritten(self):
+    def test_faithful_light_edit_requires_review_then_passes(self):
         self.candidate["sections"][0]["entries"][0]["bullets"][0]["text"] = "Built a Python dashboard."
-        self.assertTrue(any("Faithful" in e for e in self.check()["errors"]))
+        report = self.check(approved=False)
+        self.assertEqual(report["errors"], [])
+        self.assertTrue(any(item["path"].endswith("bullet/0") for item in report["review"]))
+        self.assertEqual(report["status"], "review")
+        self.assertEqual(self.check(approved=True)["status"], "pass")
+
+    def test_faithful_formatting_preserves_words_and_raw_evidence(self):
+        bullet = self.candidate["sections"][0]["entries"][0]["bullets"][0]
+        quote = r"Built a \textbf{Python \emph{dashboard}} to visualize sensor data and identify missing readings."
+        self.context["master"]["master/resume.tex"] += "\n" + quote
+        bullet["evidence"][0]["quote"] = quote
+        report = self.check(approved=False)
+        self.assertEqual(report["errors"], [])
+        self.assertFalse(any(item["path"].endswith("bullet/0") for item in report["review"]))
+        # A fabricated plain-text quote must still fail raw source validation.
+        self.context["master"]["master/resume.tex"] = quote
+        bullet["evidence"][0]["quote"] = bullet["text"]
+        self.assertTrue(any("Quote not found verbatim" in e for e in self.check()["errors"]))
+
+    def test_added_words_or_combined_quotes_require_semantic_review(self):
+        bullet = self.candidate["sections"][0]["entries"][0]["bullets"][0]
+        for quotes in ([r"Built a \textbf{dashboard}."], ["Built a dashboard.", "Python"]):
+            with self.subTest(quotes=quotes):
+                self.context["master"]["master/resume.tex"] += "\n" + "\n".join(quotes)
+                bullet["evidence"] = [{"source": "master/resume.tex", "quote": q} for q in quotes]
+                bullet["text"] = "Built a Python dashboard."
+                report = self.check(approved=False)
+                self.assertEqual(report["errors"], [])
+                self.assertTrue(any(item["path"].endswith("bullet/0") for item in report["review"]))
+
+    def test_formatted_numbers_are_checked_as_rendered_text(self):
+        bullet = self.candidate["sections"][0]["entries"][0]["bullets"][0]
+        quote = r"Built a Python dashboard with \textbf{50\%} fewer errors."
+        self.context["master"]["master/resume.tex"] += "\n" + quote
+        bullet["evidence"][0]["quote"] = quote
+        bullet["text"] = "Built a Python dashboard with 50% fewer errors."
+        self.assertEqual(self.check()["errors"], [])
+        bullet["text"] = bullet["text"].replace("50%", "60%")
+        self.assertTrue(any("number absent" in e for e in self.check()["errors"]))
+
+    def test_plain_quote_handles_groups_and_escapes_conservatively(self):
+        self.assertEqual(plain_quote(r"\textbf{Tools}{: Python, R\&D, 50\%, \{data\}}", "master/a.tex"),
+                         "Tools: Python, R&D, 50%, {data}")
+        self.assertEqual(plain_quote(r"Python~tools", "master/a.tex"), "Python tools")
+        for quote in (r"\custom{Python}", r"\textbf{Python", r"Python}",
+                      r"\textbf Python", r"Python $x^2$", "Python % hidden\nwords"):
+            with self.subTest(quote=quote):
+                self.assertEqual(plain_quote(quote, "master/a.tex"), quote)
+        literal = r"\textbf{Python} {literal braces}"
+        self.assertEqual(plain_quote(literal, "master/a.md"), literal)
 
     def test_three_line_bullet_rejected(self):
         layout = compiled()

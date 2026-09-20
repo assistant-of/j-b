@@ -44,7 +44,7 @@ class FakeBackend:
         self.values, self.calls = list(values), []
 
     def ask(self, instruction, data, shape):
-        self.calls.append((instruction, data))
+        self.calls.append((instruction, data, shape))
         if not self.values:
             raise AssertionError("Unexpected backend call")
         return deepcopy(self.values.pop(0))

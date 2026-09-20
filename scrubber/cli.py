@@ -8,7 +8,7 @@ from pathlib import Path
 from .backend import Backend
 from .schema import RANKING, validate
 from .sources import collect, fetch_job, read_document
-from .workflow import new_project, read_json, run, verify_project, write_json
+from .workflow import DEFAULT_MAX_REPAIRS, new_project, read_json, run, verify_project, write_json
 
 PREFERENCES = """# Job preferences
 
@@ -57,7 +57,8 @@ def parser():
     generate.add_argument("--name", default="application")
     generate.add_argument("--pages", type=int, choices=range(1, 6), default=1)
     generate.add_argument("--finance", action="store_true", help="Enforce a one-page resume")
-    generate.add_argument("--font-size", type=int, choices=(11, 12), default=12)
+    generate.add_argument("--font-size", type=int, choices=(11, 12), default=None,
+                          help="Override master font size (default: preserve the master template)")
     resume = commands.add_parser("resume", help="Continue a saved session; edited JSON is revalidated")
     resume.add_argument("project", type=Path)
     resume.add_argument("--revise", choices=("plan", "outline", "draft"))
@@ -77,6 +78,8 @@ def parser():
         command.add_argument("--timeout", type=int, default=300, help="Backend timeout in seconds")
     for command in (generate, resume):
         command.add_argument("--lean", action="store_true", help="Also check the exported constraints with Lean 4")
+        command.add_argument("--max-repairs", type=int, default=DEFAULT_MAX_REPAIRS,
+                             help="Content validation repairs per stage (default: 8; 0: retry until valid)")
     return p
 
 
@@ -160,6 +163,8 @@ def main(argv=None):
         else:
             if args.timeout <= 0:
                 raise ValueError("Timeout must be positive")
+            if args.max_repairs < 0:
+                raise ValueError("--max-repairs must be nonnegative (0 means retry until valid)")
             if args.command in ("generate", "chat"):
                 root = args.root.resolve()
                 materials = get_materials(root)
@@ -187,7 +192,8 @@ def main(argv=None):
                 context = read_json(project / "inputs.json")
             backend = Backend(args.backend or context.get("backend", "codex"),
                               args.model or context.get("model"), args.timeout)
-            results = run(project, backend, revise=getattr(args, "revise", None), lean=args.lean)
+            results = run(project, backend, revise=getattr(args, "revise", None), lean=args.lean,
+                          max_repairs=args.max_repairs)
         return 0 if all(status == "pass" for status in results.values()) else 2
     except (KeyboardInterrupt, EOFError, InterruptedError):
         print("Session paused; saved files are retained. Use resume to continue.", file=sys.stderr)

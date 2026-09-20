@@ -170,7 +170,7 @@ uv run scrubber chat --paste --backend claude --model YOUR_MODEL_NAME
 | `--name LABEL` | `application` | Label the unique application directory |
 | `--pages N` | `1`; allowed `1`–`5` | Maximum resume pages |
 | `--finance` | Off | Enforce one resume page, overriding `--pages` |
-| `--font-size N` | `12`; allowed `11` or `12` | Font size in points |
+| `--font-size N` | Master template size; optional `11` or `12` | Explicit font-size override |
 | `--lean` | Off for a new session | Require Lean verification in addition to Python checks |
 
 `--job-file`, `--url`, and `--paste` are mutually exclusive for generation. `PROMPT` supplies tailoring instructions; the job description is supplied separately. Requirements and outlines still require interactive approval when using a file or URL. There is no automatic-approval flag.
@@ -244,21 +244,31 @@ flowchart TD
     I --> J[Verification reports and optional Lean check]
 ```
 
-At the requirements and outline prompts, enter `yes`, give revision instructions, or enter `quit`. No generation stage bypasses these approvals. Invalid evidence/coverage outputs get at most two corrective model calls before an actionable failure. Layout failures are reported for revision, not silently fixed by reducing the font or dropping requirements.
+At the requirements and outline prompts, enter `yes`, give revision instructions, or enter `quit`. No generation stage bypasses these approvals. Invalid evidence/coverage outputs automatically loop through correction and revalidation, showing each failure and repair attempt. The default limit is eight corrective model calls per stage; `generate` and `resume` accept `--max-repairs N` to change it, or `--max-repairs 0` to keep retrying until content validation succeeds (interrupt to pause). After initial verification, an underfilled resume gets up to four measured expansion attempts. Rejected attempts provide layout/evidence feedback to the next attempt; the last valid draft is retained. Fonts and approved requirements are preserved. Backend failures and malformed responses still stop with an error.
+
+Draft corrections target individual failed claims when all errors are local. Each repair receives the failed draft, the claim and its source quotes, mapped keyword requirements, and validation errors; a closed response schema prevents edits to other claims. Structural or overall keyword-coverage errors use a full-draft retry with the previous draft included. Every correction is validated again. If repairs are exhausted, `draft.json`, `comparison.md`, and `draft-errors.json` remain available for inspection. `scrubber resume PROJECT --max-repairs 0` retries the saved draft automatically, without requiring manual edits. The error file is removed once content validation succeeds.
 
 Once `draft.json` has been produced, the harness immediately writes each candidate's `resume.tex`, `cover-letter.tex`, `cover-letter.md`, and evidence files before asking for claim-by-claim review. If you pause or interrupt at that review prompt, the files remain available for inspection; their verification reports can still be `review`, `fail`, or `pending` until the checks and approvals are complete.
 
 The three candidates are:
 
-- **faithful:** selects verbatim master bullets and asks the model to retain source section and entry order.
+- **faithful:** stays close to master bullet wording and asks the model to retain source section and entry order. Light edits for clarity, length, and supported job terminology are allowed, with evidence review for reworded claims. Citations retain the exact raw source quote.
 - **balanced:** reorders and lightly rewrites supported material.
 - **targeted:** emphasizes the strongest supported fit to the role.
 
 Every candidate must satisfy the approved requirements. If faithful source bullets cannot cover the proposed keywords, revise the requirements to achievable ones; important unsupported qualifications belong in the gaps list. Literal keyword matching is intentional and may require choosing a different exact phrase from the posting.
 
-`--pages` defaults to **1** and can be set from 1 to 5; `--finance` always enforces 1. `--font-size` defaults to **12** and supports **11**. Cover letters must fit one page. Each bullet must fit two actual rendered lines and contain every keyword it claims to satisfy.
+Quote comparisons ignore case and whitespace and recognize common formatting in `.tex` quotes: `\textbf`, `\textit`, `\textsl`, `\textsc`, `\textrm`, `\textsf`, `\texttt`, `\textnormal`, `\emph`, `\underline`, and `\mbox`, including nested groups and escaped punctuation. Formatting-only differences do not require claim review. Unknown macros, math, comments, or malformed fragments are left unchanged; use a smaller quote or a plain-text companion source for those. Wording changes, including in faithful bullets, require explicit evidence review rather than failing solely because they differ from a quote. The validator does not infer semantic equivalence or measure whether an edit is small: every reworded/composed claim must be reviewed. Evidence must still occur verbatim in the raw source, and numeric and keyword checks still apply.
 
-The renderer uses a controlled, plain LaTeX layout. It preserves the approved section and entry structure and faithful bullet text, but **does not reproduce arbitrary custom master-template macros, typography, columns, or graphics**. Source LaTeX is reference material, never executable generated output. Complex markup may need a plain-text companion in `master/`.
+`--pages` defaults to **1** and can be set from 1 to 5; `--finance` always enforces 1. This is both a hard maximum and a content target: the final page should use at least **90%** of the template’s text height. `--font-size` is optional: by default the master’s class size and relative sizes are preserved (including its small text). An explicit **11** or **12** overrides the class size. Without a LaTeX master, the fallback is 12 pt. Cover letters use the requested size or 12 pt and must fit one page. Each bullet must fit two actual rendered lines and contain every keyword it claims to satisfy.
+
+The renderer copies the local master’s preamble, preserving packages, fonts, margins, section rules, spacing, and macro definitions. It uses the Jake Gutierrez template family’s `resumeSubheading`, `resumeItem`, and list macros, with compact skills rows, contact/project links, and source emphasis. Long entry fields wrap within the original layout. Plain article templates retain their preamble with basic entry rendering; arbitrary custom body layouts/graphics are not reconstructed. Keep one `.tex` master; ambiguous multiple templates produce an error. The local master preamble is trusted TeX and is compiled with shell escape disabled; model-supplied claims remain escaped plain text. The master’s engine directive is respected. If LuaLaTeX lacks its font loader and the template explicitly supports pdfTeX, compilation uses that branch and records the engine.
+
+After the first verification, the harness measures the final page’s occupied height against the template’s text height. Being below the maximum page count, or leaving more than 10% of the last page unused, triggers an editorial expansion pass. The model expands descriptions and appends supported bullets inside the approved entries, prioritizing role-specific methods, implementation, validation, and results. Header, cover letter, section order, and entry titles stay fixed. New facts still require exact evidence and every bullet still needs an approved keyword. There is no permission to invent achievements or complete unknown placeholders.
+
+Added/replaced words appear in **dark blue** (`ScrubberAddition`, `#185A9D`); unchanged words retain their original styling. The harness computes this difference against the initial verified draft, rather than trusting model-provided colour tags. `expansion.json` stores that baseline, each attempt’s layout/errors, and the accepted result. Every proposed expansion is recompiled and rechecked for evidence, keyword coverage, two-line bullets, page count, and overflow. Final verification regenerates the Lean certificate and invalidates claim approvals when content changes. Rewritten additions still require factual review.
+
+A full page does not trigger expansion. Missing compilation cannot establish fullness. If four attempts fail, or the model cannot add supported detail, the saved draft remains available and the page-fill shortfall prevents a `pass`. Resume retains completed expansion attempts and colouring without repeating model calls; `--revise draft` starts a fresh pass. `verify` only renders/checks saved content and never calls a model. Height is a TeX layout measurement, not proof of editorial quality; the source and role still need human judgment.
 
 Cover letters connect sourced experience to the role and use `ref/` for tone. Unknown program year, PEY status, metrics, and company history must be omitted rather than invented. Some style choices, including action/description/result quality and the strength of transferable-skill connections, remain editorial judgments.
 
@@ -274,6 +284,7 @@ projects/<timestamp>-<name>-<id>/
   keywords.txt
   outline.json
   draft.json              # Editable structured source for all candidates
+  expansion.json          # Initial baseline, measured attempts, and colour provenance
   state.json              # Content/dependency hashes for approvals
   comparison.md
   results.json
@@ -310,8 +321,8 @@ The report tree includes the overall objective, each resume section, and individ
 - Exact source quotes from the saved master; job quotes can support company/role facts in cover letters. References cannot supply applicant facts.
 - No numeric tokens absent from cited evidence. A source number alone does not establish that it is used in the right context.
 - Literal, case-insensitive keyword coverage for every bullet, required section, and the whole resume.
-- Verbatim faithful bullets; explicit human review for composed or reworded claims.
-- Actual page and bullet-line counts from `pdflatex`, and rejection of reported overflow.
+- Explicit human review for composed or reworded claims, including faithful bullets.
+- Actual page counts, final-page fill, and bullet-line counts from LaTeX, and rejection of reported overflow.
 - Content-bound approvals, with changed inputs requiring regeneration/review.
 
 Statuses are `pass`, `fail`, `review`, or `pending`. Missing tools never count as a pass. A pass means the implemented mechanical checks passed and required human reviews were recorded; it does **not** prove employment history, source accuracy, or semantic entailment. A quote can be genuine but misleadingly applied, so review evidence and the final PDF before using it.

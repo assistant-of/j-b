@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scrubber.backend import Backend
-from scrubber.cli import main
+from scrubber.cli import main, parser
 from scrubber.render import compile_tex
 from scrubber.schema import obj, STRING
 from scrubber.sources import fetch_job, html_text, read_document
@@ -108,6 +108,15 @@ class DocumentTests(unittest.TestCase):
             code = main(["generate", "test", "--root", tmp, "--paste"])
         self.assertEqual(code, 1)
         self.assertIn("master", output.getvalue())
+
+    def test_cli_repair_budget(self):
+        for command in (["generate"], ["resume", "project"]):
+            with self.subTest(command=command):
+                self.assertEqual(parser().parse_args(command).max_repairs, 8)
+                self.assertEqual(parser().parse_args(command + ["--max-repairs", "0"]).max_repairs, 0)
+        with patch("sys.stderr", new_callable=io.StringIO) as output:
+            self.assertEqual(main(["resume", "missing", "--max-repairs", "-1"]), 1)
+        self.assertIn("--max-repairs must be nonnegative", output.getvalue())
 
     def test_init_preserves_preferences(self):
         with tempfile.TemporaryDirectory() as tmp, patch("sys.stdout", new_callable=io.StringIO):

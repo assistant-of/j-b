@@ -3,6 +3,8 @@ import hashlib
 import json
 import re
 
+from .text import plain_quote
+
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -60,6 +62,7 @@ def check_candidate(candidate, plan, sources, job, outline, approved=False, layo
     for path, claim, bullet in claims(candidate):
         node_errors, node_review = [], []
         quotations = []
+        plain_quotations = []
         for evidence in claim["evidence"]:
             source, quote = evidence["source"], evidence["quote"]
             corpus = job if source == "job.txt" and path.startswith("cover/") else sources.get(source)
@@ -69,17 +72,17 @@ def check_candidate(candidate, plan, sources, job, outline, approved=False, layo
                 node_errors.append(f"Quote not found verbatim in {source}")
             else:
                 quotations.append(quote)
-        if normalize(claim["text"]) not in [normalize(q) for q in quotations]:
+                plain_quotations.append(plain_quote(quote, source))
+        copies_quote = normalize(claim["text"]) in [normalize(q) for q in quotations + plain_quotations]
+        if not copies_quote:
             node_review.append("Reworded/composed claim: confirm the cited evidence supports every assertion")
         numbers = re.findall(r"(?<!\w)\d+(?:[.,]\d+)*(?:%|\+)?", claim["text"])
-        evidence_numbers = re.findall(r"(?<!\w)\d+(?:[.,]\d+)*(?:%|\+)?", " ".join(quotations))
+        evidence_numbers = re.findall(r"(?<!\w)\d+(?:[.,]\d+)*(?:%|\+)?", " ".join(quotations + plain_quotations))
         if any(number not in evidence_numbers for number in numbers):
             node_errors.append("Contains a number absent from its cited evidence")
         if bullet:
             if not claim["requirements"]:
                 node_errors.append("Every bullet must map to at least one job keyword")
-            if candidate["name"] == "faithful" and normalize(claim["text"]) not in [normalize(q) for q in quotations]:
-                node_errors.append("Faithful bullets must copy a source quote verbatim")
             for rid in claim["requirements"]:
                 req = requirements.get(rid)
                 if req is None:
