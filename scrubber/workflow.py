@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import schema
+from .progress import progress
 from .render import compile_tex, letter_tex, resume_tex
 from .verify import check_candidate, check_plan, claims, digest, lean_certificate
 
@@ -192,6 +193,13 @@ def run(project, backend, ask=input, emit=print, revise=None, lean=False):
                   {**context, "plan": plan, "outline": outline}, schema.DRAFT,
                   lambda d: draft_checks(d, plan, context, outline), None, ask, emit)
     (project / "comparison.md").write_text(comparison(draft), encoding="utf-8")
+
+    # Materialize an inspectable draft before asking for claim-by-claim review.
+    # This keeps resume.tex available if the user pauses or closes the session
+    # at that review prompt. The final verification pass below updates reports
+    # after approvals are recorded.
+    verify_project(project, lean=lean, emit=emit)
+
     for candidate, sketch in zip(draft["candidates"], outline["candidates"]):
         name = candidate["name"]
         approval_key = f"claims:{name}"
@@ -267,8 +275,9 @@ def verify_project(project, lean=False, emit=print):
                 report["pending"].append("Lean requested but not installed")
                 report["status"] = "pending" if report["status"] == "pass" else report["status"]
             else:
-                result = subprocess.run(["lean", "constraints.lean"], cwd=folder,
-                                        capture_output=True, text=True, timeout=60)
+                with progress(f"Checking Lean certificate for {candidate['name']}"):
+                    result = subprocess.run(["lean", "constraints.lean"], cwd=folder,
+                                            capture_output=True, text=True, timeout=60)
                 report["lean"] = {"passed": result.returncode == 0, "output": result.stdout + result.stderr}
                 if result.returncode:
                     report["errors"].append("Lean certificate failed")

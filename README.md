@@ -124,6 +124,8 @@ uv run scrubber resume --help
 
 `-h` / `--help` is available on every command.
 
+In an interactive terminal, a spinner and elapsed time appear while waiting for Codex or Claude, fetching a listing, extracting PDF text, compiling LaTeX, or running Lean. The label identifies the current operation. The spinner clears before the next prompt or error and stops on interruption. It indicates waiting time, not a percentage complete. Animation is written to stderr and is disabled when stderr is redirected or the terminal reports `TERM=dumb`.
+
 | Command | Purpose | Arguments and command-specific options |
 | --- | --- | --- |
 | `init` | Create `master/`, `ref/`, and `projects/`; create `pref.md` only if absent | `--root PATH` |
@@ -243,6 +245,8 @@ flowchart TD
 ```
 
 At the requirements and outline prompts, enter `yes`, give revision instructions, or enter `quit`. No generation stage bypasses these approvals. Invalid evidence/coverage outputs get at most two corrective model calls before an actionable failure. Layout failures are reported for revision, not silently fixed by reducing the font or dropping requirements.
+
+Once `draft.json` has been produced, the harness immediately writes each candidate's `resume.tex`, `cover-letter.tex`, `cover-letter.md`, and evidence files before asking for claim-by-claim review. If you pause or interrupt at that review prompt, the files remain available for inspection; their verification reports can still be `review`, `fail`, or `pending` until the checks and approvals are complete.
 
 The three candidates are:
 

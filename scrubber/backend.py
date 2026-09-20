@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .progress import progress
 from .schema import validate
 
 
@@ -42,8 +43,9 @@ class Backend:
             if self.name == "codex":
                 command.append("-")
             try:
-                result = subprocess.run(command, input=prompt, text=True, capture_output=True,
-                                        cwd=root, timeout=self.timeout)
+                with progress(f"Waiting for {self.name} response"):
+                    result = subprocess.run(command, input=prompt, text=True, capture_output=True,
+                                            cwd=root, timeout=self.timeout)
             except subprocess.TimeoutExpired as exc:
                 raise RuntimeError(f"{self.name} timed out after {self.timeout}s; session files are retained.") from exc
             if result.returncode:

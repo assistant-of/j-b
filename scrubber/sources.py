@@ -9,6 +9,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree
 
+from .progress import progress
+
 MAX_BYTES = 2_000_000
 
 
@@ -47,8 +49,9 @@ def read_document(path):
     if path.suffix.lower() == ".pdf":
         if not shutil.which("pdftotext"):
             raise RuntimeError("Install pdftotext (Poppler), or convert the PDF to Markdown.")
-        result = subprocess.run(["pdftotext", "-layout", str(path), "-"], capture_output=True,
-                                text=True, timeout=30)
+        with progress(f"Reading {path.name}"):
+            result = subprocess.run(["pdftotext", "-layout", str(path), "-"], capture_output=True,
+                                    text=True, timeout=30)
         if result.returncode:
             raise ValueError(f"Cannot extract {path}: {result.stderr}")
         content = result.stdout
@@ -87,10 +90,11 @@ def fetch_job(url):
         raise ValueError("Job URLs must use http or https")
     request = urllib.request.Request(url, headers={"User-Agent": "ECCScrubber/0.1"})
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            raw = response.read(MAX_BYTES + 1)
-            final_url = response.url
-            charset = response.headers.get_content_charset() or "utf-8"
+        with progress("Fetching job listing"):
+            with urllib.request.urlopen(request, timeout=20) as response:
+                raw = response.read(MAX_BYTES + 1)
+                final_url = response.url
+                charset = response.headers.get_content_charset() or "utf-8"
     except (urllib.error.URLError, TimeoutError) as exc:
         raise ValueError("Listing inaccessible. Paste the full job description instead.") from exc
     if len(raw) > MAX_BYTES:

@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .progress import progress
+
 
 def escape(text):
     replacements = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
@@ -69,9 +71,10 @@ def compile_tex(path, max_pages):
     if not engine:
         return {"compiled": False, "reason": "pdflatex is not installed", "max_pages": max_pages}
     # Only the harness-generated template is compiled by callers, never model-supplied TeX.
-    result = subprocess.run([engine, "-no-shell-escape", "-interaction=nonstopmode",
-                             "-halt-on-error", path.name], cwd=path.parent,
-                            capture_output=True, text=True, timeout=60)
+    with progress(f"Compiling {path.parent.name}/{path.name}"):
+        result = subprocess.run([engine, "-no-shell-escape", "-interaction=nonstopmode",
+                                 "-halt-on-error", path.name], cwd=path.parent,
+                                capture_output=True, text=True, timeout=60)
     log_path = path.with_suffix(".log")
     log = log_path.read_text(errors="replace") if log_path.exists() else result.stdout
     if result.returncode:
