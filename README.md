@@ -2,7 +2,10 @@
 
 A Python CLI that turns a job description and your master resume into three tailored LaTeX resumes and accompanying cover letters. Codex or Claude Code handles drafting; Python controls the workflow, source checks, approvals, rendering, and verification.
 
-The project follows the plan in [scrubber.md](scrubber.md). Start with the architecture below to understand the design, or jump to [setup](#start) to run it.
+**This was entirely vibe-coded** based on my proposed plan. My apologies for any bugs, I unfortunately don't have to write the code base myself. Just a reminder that since this uses an LLM backend, **do not upload anything you do not want OpenAI/Claude knowing**.
+
+
+The project follows the plan in [scrubber.md](scrubber.md). Start with the architecture below to understand the design, or jump to [setup](#start) or the [CLI reference](#cli-reference) to run it.
 
 ## Architecture
 
@@ -109,6 +112,95 @@ Commit the files that describe the environment so another person can clone the r
 
 These rules are defined in [`.gitignore`](.gitignore). Optional `.gitkeep` placeholders in `master/` and `ref/` are allowed. A fresh clone starts without personal resume materials; `uv run scrubber init` creates the input directories, and each user adds their own files locally.
 
+## CLI reference
+
+Run commands from the repository root with `uv run scrubber COMMAND [OPTIONS]`. Put command options after the command name. Running `uv run scrubber` with no arguments starts `chat` with its defaults.
+
+```bash
+uv run scrubber --help
+uv run scrubber generate --help
+uv run scrubber resume --help
+```
+
+`-h` / `--help` is available on every command.
+
+| Command | Purpose | Arguments and command-specific options |
+| --- | --- | --- |
+| `init` | Create `master/`, `ref/`, and `projects/`; create `pref.md` only if absent | `--root PATH` |
+| `doctor` | Report tool locations, readable source counts, and whether preferences exist | `--root PATH` |
+| `generate [PROMPT]` | Start an application session with interactive approvals | See generation options below |
+| `chat [PROMPT]` | Alias for `generate`, with identical behavior and options | See generation options below |
+| `resume PROJECT` | Continue a session using its saved inputs and stage outputs | `--revise plan|outline|draft`, `--lean`, backend options below |
+| `verify PROJECT` | Re-render and verify saved drafts without model calls or granting approvals | `--lean` |
+| `discover` | Rank supplied listings against master materials and preferences | `--root PATH`, `--listings DIRECTORY`, repeatable `--url URL`, backend options below |
+| `convert SOURCE OUTPUT` | Extract a document into a text/Markdown file | Both paths are required; existing output files are not overwritten |
+
+`PROJECT` is the application directory printed when a session starts, such as `projects/20260920-120000-company-role-abc123`. `--root` defaults to the current directory and selects the workspace containing `master/`, `ref/`, `pref.md`, and `projects/`. It is available on `init`, `doctor`, `generate`/`chat`, and `discover`; `resume` and `verify` use the supplied project path.
+
+**Backend options** apply to `generate`, `chat`, `resume`, and `discover`:
+
+| Option | Values / default | Behavior |
+| --- | --- | --- |
+| `--backend NAME` | `codex` or `claude`; new sessions and discovery default to `codex` | Select the local coding CLI |
+| `--model NAME` | Optional; resumes reuse the saved model when omitted | Pass the model name unchanged to the selected backend; otherwise use its default |
+| `--timeout SECONDS` | Integer; default `300` | Bound each backend subprocess call; use a positive value |
+
+The harness checks for the selected executable (`codex` or `claude`) on `PATH` before calling it. It does **not** automatically select another installed backend or fall back after an error. `doctor` reports installation availability; it does not verify login. Authentication failures are reported when a backend call runs.
+
+```bash
+uv run scrubber doctor
+uv run scrubber chat --paste --backend codex
+uv run scrubber chat --paste --backend claude
+uv run scrubber chat --paste --backend claude --model YOUR_MODEL_NAME
+```
+
+`resume` defaults to the backend and model saved when the session was created. Flags override them for that invocation; they do not rewrite the saved defaults. If the saved model belongs to a different backend, supply a compatible `--model` when switching. Already completed, unchanged stages are reused even when a different backend is selected; use `--revise` to regenerate a stage.
+
+**Generation options** apply to both `generate` and `chat`:
+
+| Argument / option | Default | Behavior |
+| --- | --- | --- |
+| `PROMPT` | Asked interactively | Instructions about what to emphasize; quote multiword prompts |
+| `--job-file PATH` | Unset | Read a saved job description |
+| `--url URL` | Unset | Fetch a listing, ask you to confirm it, and offer paste input if inaccessible or incorrect |
+| `--paste` | Used when no source option is given | Read a pasted description until a line containing only `END` or end-of-input |
+| `--root PATH` | Current directory | Select the materials and output workspace |
+| `--name LABEL` | `application` | Label the unique application directory |
+| `--pages N` | `1`; allowed `1`–`5` | Maximum resume pages |
+| `--finance` | Off | Enforce one resume page, overriding `--pages` |
+| `--font-size N` | `12`; allowed `11` or `12` | Font size in points |
+| `--lean` | Off for a new session | Require Lean verification in addition to Python checks |
+
+`--job-file`, `--url`, and `--paste` are mutually exclusive for generation. `PROMPT` supplies tailoring instructions; the job description is supplied separately. Requirements and outlines still require interactive approval when using a file or URL. There is no automatic-approval flag.
+
+```bash
+uv run scrubber generate "Emphasize testing and Python" \
+  --job-file saved-jobs/software-intern.txt --name company-role \
+  --backend codex --pages 1 --font-size 12 --lean
+
+uv run scrubber resume projects/SESSION --revise draft
+uv run scrubber verify projects/SESSION --lean
+
+uv run scrubber discover --listings saved-jobs --backend claude
+uv run scrubber discover --url 'https://example.com/jobs/one' \
+  --url 'https://example.com/jobs/two'
+
+uv run scrubber convert old-letter.pdf ref/old-letter.md
+```
+
+For `discover`, `--listings` and repeated `--url` options may be combined. At least one readable listing is needed. An inaccessible URL is reported and skipped; import pasted descriptions with `--listings` when the portal cannot be fetched.
+
+For `resume`, `--revise` regenerates the named stage, and changed outputs invalidate dependent stages. For `generate`, `chat`, `resume`, and `verify`, requesting `--lean` persists that requirement for subsequent runs of the session. The existing `--pages` and `--font-size` settings are loaded from the saved session when resuming or verifying.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Command succeeded; generation/resume/verification require every candidate to pass |
+| `1` | Input, document, or external-tool error |
+| `2` | One or more candidates failed, need review, or have pending checks; also used for invalid CLI arguments |
+| `130` | Session paused or interrupted |
+
+`doctor` is informational and can exit successfully while reporting missing tools. Use its output to determine which dependencies are available.
+
 ## Job descriptions and discovery
 
 ```bash
@@ -204,7 +296,7 @@ uv run scrubber verify projects/SESSION --lean
 
 Sessions retain their original input snapshot even if you later change `master/` or `pref.md`. Start a new session to use new source materials, or deliberately edit `inputs.json` and resume to regenerate dependent stages. Do not edit generated TeX as the main source: verification regenerates it from `draft.json`.
 
-Exit codes: `0` means every candidate passes; `2` means one or more candidates fail, need review, or have pending checks; `1` means an input/tool error; `130` means the session was paused/interrupted. Unchanged resumed stages do not make extra model calls. Run only one process per session at a time.
+See the [CLI reference](#cli-reference) for exit codes and all available options. Unchanged resumed stages do not make extra model calls. Run only one process per session at a time.
 
 ## What verification establishes
 
